@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Timer;
 
+import javax.print.attribute.standard.Sides;
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -52,9 +53,10 @@ public class Processing {
 //	Constants for known variables
 
 	public static final double OFFSET_TO_FRONT = 0;
-	public static final double CAMERA_WIDTH = 320;
-	public static final double WIDTH_BETWEEN_TARGET = 8.5;
+	public static final double CAMERA_WIDTH = 640;
 	public static final double WIDTH_CLOSENESS = .20;
+	public static final double DISTANCE_CONSTANT = .34;
+	public static final double ANGLE_OFFSET = -2.2333;
 	public static boolean shouldRun = true;
 	static NetworkTable table;
 	public static BoilerTracker ayy = new BoilerTracker();
@@ -63,6 +65,10 @@ public class Processing {
 	static double distanceFromTarget;
 	static double lengthError;
 	static double[] centerX;
+	static double[] centerY;
+	static double[] sideX;
+	static Rect r1;
+	static Rect r2;
 	/**
 	 * 
 	 * @param args command line arguments0
@@ -74,7 +80,8 @@ public class Processing {
 		NetworkTable.setIPAddress("roborio-1806-frc.local");
 		NetworkTable.initialize();
 		table = NetworkTable.getTable("BoilerTracker");
-		
+		r1 = new Rect();
+		r2 = new Rect();
 		while(shouldRun){
 			try {
 //				opens up the camera stream and tries to load it
@@ -106,12 +113,14 @@ public class Processing {
 //		only run for the specified time
 		while(true){
 			//System.out.println("Hey I'm Processing Something!");
-			contours.clear();
 			videoCapture.read(matOriginal);
 			ayy.process(matOriginal);
-			System.out.println(returnCenterX());
-			//table.putDouble("distanceFromTarget", distanceFromTarget());
-			table.putDouble("angleFromGoal", lengthBetweenContours);
+			table.putDouble("center in pixels", returnCenterX());
+			//table.putNumberArray("centerX", centerX);
+			returnSides();
+			//table.putNumberArray("sides", sideX);
+			table.putDouble("distanceFromTarget", returnDistance());
+			table.putDouble("angleFromGoal", getAngle());
 		}
 		
 	}
@@ -121,16 +130,18 @@ public class Processing {
 		if(!ayy.filterContoursOutput.isEmpty()){
 			if(ayy.filterContoursOutput.size() == 2){
 				//System.out.println("I see two of the targets");
-				Rect r1 = Imgproc.boundingRect(ayy.filterContoursOutput.get(1));
-				Rect r2 = Imgproc.boundingRect(ayy.filterContoursOutput.get(0)); 
+				r1 = Imgproc.boundingRect(ayy.filterContoursOutput.get(1));
+				r2 = Imgproc.boundingRect(ayy.filterContoursOutput.get(0)); 
 				centerX = new double[]{r1.x + (r1.width / 2), r2.x + (r2.width / 2)};
+				centerY = new double[]{r1.y + (r1.height / 2), r2.y + (r2.height / 2)};
 				// subtracts one another to get length in pixels
 				//lengthBetweenContours = Math.abs((centerX[0] + centerX[1]) / 2) - 320;
 				lengthBetweenContours = Math.abs((centerX[0] + centerX[1]) / 2) - CAMERA_WIDTH /2;
 			} else if(ayy.filterContoursOutput.size() == 1){
 				//System.out.println("I see one of the targets");
-				Rect r1 = Imgproc.boundingRect(ayy.filterContoursOutput.get(0));
+				r1 = Imgproc.boundingRect(ayy.filterContoursOutput.get(0));
 				centerX = new double[]{r1.x + (r1.width / 2)};
+				centerY = new double[]{r1.y + (r1.height / 2)};
 				lengthBetweenContours = Math.abs((centerX[0]) - CAMERA_WIDTH /2);
 			} else {
 				Rect[] rectangleArray = new Rect[ayy.filterContoursOutput.size()];
@@ -173,17 +184,53 @@ public class Processing {
 						} 
 					}
 					ArrayList<Integer> tempPairs = Pairs.get(currentBest);
-					Rect r1 = rectangleArray[tempPairs.get(0)];
-					Rect r2 = rectangleArray[tempPairs.get(1)];	
+					r1 = rectangleArray[tempPairs.get(0)];
+					r2 = rectangleArray[tempPairs.get(1)];	
 					centerX = new double[]{r1.x + (r1.width / 2), r2.x + (r2.width / 2)};
+					centerY = new double[]{r1.y + (r1.height / 2), r2.y + (r2.height / 2)};
 					//System.out.println("\t Best Pairs Found: " + tempPairs.get(0) +" "+ tempPairs.get(1));
 					// subtracts one another to get length in pixels
 					//lengthBetweenContours = Math.abs((centerX[0] + centerX[1]) / 2) - 320;
-					lengthBetweenContours = Math.abs((centerX[0] + centerX[1]) / 2) - CAMERA_WIDTH /2;
+					lengthBetweenContours = Math.abs((centerX[0] + centerX[1]) / 2) - CAMERA_WIDTH /2 ;
+					
 				}
 			}
 		}
 		Imgcodecs.imwrite("output.png", matOriginal);
 		return lengthBetweenContours;
+	}
+	public static double returnDistance(){
+		double distance = 0;
+		if(!ayy.filterContoursOutput.isEmpty() && ayy.filterContoursOutput.size() >= 2){
+			if(centerY[0] > centerY[1]){
+				distance = centerY[1] * DISTANCE_CONSTANT;
+			} else{
+				distance = centerY[0] * DISTANCE_CONSTANT;
+			}
+		} else {
+			distance = centerY[0] * DISTANCE_CONSTANT;
+		}
+		return distance;
+	}
+	public static void returnSides(){
+		double leftSide;
+		double rightSide;
+		leftSide = r1.x;
+		rightSide = r1.x + r1.width;
+		sideX = new double[]{leftSide, rightSide};
+	}
+	public static double getAngle(){
+		// 8.5in is for the distance from center to center from goal, then divide by lengthBetweenCenters in pixels to get proportion
+		double angleToGoal = 0;
+		//Looking for the 2 blocks to actually start trig
+		if(!ayy.filterContoursOutput.isEmpty() && ayy.filterContoursOutput.size() >= 1){
+			double constants = 15 / (sideX[0] - sideX[1]);
+			double lengthBetweenInches = lengthBetweenContours * constants;
+			angleToGoal = Math.atan(lengthBetweenInches / returnDistance());
+			angleToGoal = Math.toDegrees(angleToGoal);
+			angleToGoal = angleToGoal + ANGLE_OFFSET;
+			System.out.println(angleToGoal);
+		}
+		return angleToGoal;
 	}
 }
