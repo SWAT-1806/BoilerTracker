@@ -1,36 +1,9 @@
 
-import java.awt.Canvas;
-import java.awt.Color;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Image;
-import java.awt.Rectangle;
-import java.awt.Shape;
-import java.awt.image.BufferedImage;
-import java.awt.image.DataBufferByte;
-import java.awt.image.ImageObserver;
-import java.awt.image.WritableRaster;
-import java.lang.reflect.Array;
-import java.text.AttributedCharacterIterator;
+
 import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.Timer;
-
-import javax.print.attribute.standard.Sides;
-import javax.swing.ImageIcon;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfPoint;
-import org.opencv.core.Point;
 import org.opencv.core.Rect;
-import org.opencv.core.Scalar;
-import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
@@ -57,7 +30,10 @@ public class Processing {
 	public static final double WIDTH_CLOSENESS = .20;
 	public static final double DISTANCE_CONSTANT = .34;
 	public static final double ANGLE_OFFSET = -2.2333;
+	public static final double LENGTH_OF_TARGET = 15;
 	public static boolean shouldRun = true;
+	
+	
 	static NetworkTable table;
 	public static BoilerTracker ayy = new BoilerTracker();
 	public static Mat matOriginal = new Mat();
@@ -86,6 +62,8 @@ public class Processing {
 			try {
 //				opens up the camera stream and tries to load it
 				videoCapture = new VideoCapture();
+				centerX = new double[] {0};
+				centerY = new double[] {0};
 				//tracker = new LiftTracker();
 				videoCapture.open("http://roborio-1806-frc.local:1181/?action=stream");
 				// change that to your team number boi("http://roborio-XXXX-frc.local:1181/?action=stream");
@@ -108,24 +86,24 @@ public class Processing {
 	}
 	public static void processImage(){
 		System.out.println("Processing Started");
-		ArrayList<MatOfPoint> contours = new ArrayList<MatOfPoint>();
-
+		
 //		only run for the specified time
 		while(true){
 			//System.out.println("Hey I'm Processing Something!");
 			videoCapture.read(matOriginal);
 			ayy.process(matOriginal);
-			table.putDouble("center in pixels", returnCenterX());
-			//table.putNumberArray("centerX", centerX);
-			returnSides();
-			//table.putNumberArray("sides", sideX);
-			table.putDouble("distanceFromTarget", returnDistance());
-			table.putDouble("angleFromGoal", getAngle());
+			// putting everything on network tables, change as you will
+			table.putNumber("Distance From Center in Pixels", returnCenterX()); //returns distance from center
+			table.putNumberArray("centerX", centerX); // returns centerX values of contours
+			table.putNumberArray("centerY", centerY); // returns centerY of contours
+			table.putNumberArray("sides", returnSides()); // returns the x values of each side 
+			table.putNumber("distanceFromTarget", returnDistance()); // returns distance from target 
+			table.putNumber("angleFromGoal", getAngle()); // returns angle to goal
 		}
 		
 	}
+	//LOTS OF STUFF
 	public static double returnCenterX(){
-		double[] defaultValue = new double[0];
 			// This is the center value returned by GRIP thank WPI
 		if(!ayy.filterContoursOutput.isEmpty()){
 			if(ayy.filterContoursOutput.size() == 2){
@@ -190,7 +168,6 @@ public class Processing {
 					centerY = new double[]{r1.y + (r1.height / 2), r2.y + (r2.height / 2)};
 					//System.out.println("\t Best Pairs Found: " + tempPairs.get(0) +" "+ tempPairs.get(1));
 					// subtracts one another to get length in pixels
-					//lengthBetweenContours = Math.abs((centerX[0] + centerX[1]) / 2) - 320;
 					lengthBetweenContours = Math.abs((centerX[0] + centerX[1]) / 2) - CAMERA_WIDTH /2 ;
 					
 				}
@@ -202,33 +179,41 @@ public class Processing {
 	public static double returnDistance(){
 		double distance = 0;
 		if(!ayy.filterContoursOutput.isEmpty() && ayy.filterContoursOutput.size() >= 2){
-			if(centerY[0] > centerY[1]){
-				distance = centerY[1] * DISTANCE_CONSTANT;
-			} else{
-				distance = centerY[0] * DISTANCE_CONSTANT;
+			if(centerY.length >= 2){
+				if(centerY[0] > centerY[1]){
+					// checks for biggest contour
+					distance = centerY[1] * DISTANCE_CONSTANT;
+				} else {
+					distance = centerY[0] * DISTANCE_CONSTANT;
+				}
 			}
 		} else {
 			distance = centerY[0] * DISTANCE_CONSTANT;
 		}
 		return distance;
 	}
-	public static void returnSides(){
+	public static double[] returnSides(){
+		// this method returns the x values of the signs per the contours
 		double leftSide;
 		double rightSide;
 		leftSide = r1.x;
 		rightSide = r1.x + r1.width;
 		sideX = new double[]{leftSide, rightSide};
+		return sideX;
 	}
 	public static double getAngle(){
 		// 8.5in is for the distance from center to center from goal, then divide by lengthBetweenCenters in pixels to get proportion
 		double angleToGoal = 0;
 		//Looking for the 2 blocks to actually start trig
 		if(!ayy.filterContoursOutput.isEmpty() && ayy.filterContoursOutput.size() >= 1){
-			double constants = 15 / (sideX[0] - sideX[1]);
+			// Think of this as a multiplication factor to find the in. we are away from the target
+			double constants = LENGTH_OF_TARGET / (sideX[0] - sideX[1]);
 			double lengthBetweenInches = lengthBetweenContours * constants;
+			// Math brought to you by Ariaaagno and Jones
 			angleToGoal = Math.atan(lengthBetweenInches / returnDistance());
 			angleToGoal = Math.toDegrees(angleToGoal);
 			angleToGoal = angleToGoal + ANGLE_OFFSET;
+			// adds in offset
 			System.out.println(angleToGoal);
 		}
 		return angleToGoal;
